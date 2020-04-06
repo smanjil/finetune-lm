@@ -51,8 +51,6 @@ from transformers import (
 
 from bokeh.io import export_png
 from bokeh.plotting import figure
-from thesis_manjil.config import FINETUNE_DIR
-
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -62,6 +60,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+FINETUNE_DIR = os.path.join(os.getcwd(), 'plots')
 
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
