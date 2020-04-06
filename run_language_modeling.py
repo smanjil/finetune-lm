@@ -49,7 +49,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from bokeh.io import export_png
+from bokeh.io import export_png, output_file, show
 from bokeh.plotting import figure
 
 try:
@@ -841,7 +841,9 @@ def plot(loss_dict, loss_type=None):
            legend_label=f"{loss_type.capitalize()} Loss")
     p.circle(epochs, loss, fill_color='white', size=8)
 
-    export_png(p, filename=f'{FINETUNE_DIR}/{loss_type}.png')
+#     export_png(p, filename=f'{FINETUNE_DIR}/{loss_type}.png')
+    output_file(f'{FINETUNE_DIR}/{loss_type}.png')
+    show(p)
 
 
 if __name__ == "__main__":
