@@ -842,7 +842,7 @@ def plot(loss_dict, loss_type=None):
     p.circle(epochs, loss, fill_color='white', size=8)
 
 #     export_png(p, filename=f'{FINETUNE_DIR}/{loss_type}.png')
-    output_file(f'{FINETUNE_DIR}/{loss_type}.png')
+    output_file(f'{FINETUNE_DIR}/{loss_type}.html')
     show(p)
 
 
