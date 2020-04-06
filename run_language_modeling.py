@@ -60,7 +60,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-FINETUNE_DIR = os.path.join(os.getcwd(), 'plots')
+FINETUNE_DIR = os.path.join(os.getcwd())
 
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
