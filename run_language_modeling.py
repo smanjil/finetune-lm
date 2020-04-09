@@ -259,8 +259,6 @@ def mask_tokens(inputs: torch.Tensor, tokenizer: PreTrainedTokenizer, args) \
 def train(args, train_dataset, model: PreTrainedModel,
           tokenizer: PreTrainedTokenizer, prefix="") -> Tuple[int, float]:
     """ Train the model """
-    train_loss = dict()
-
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
 
@@ -373,7 +371,8 @@ def train(args, train_dataset, model: PreTrainedModel,
     # Check if continuing training from a checkpoint
     if args.model_name_or_path and os.path.exists(args.model_name_or_path):
         try:
-            # set global_step to gobal_step of last saved checkpoint from model path
+            # set global_step to gobal_step of last saved checkpoint from
+            # model path
             checkpoint_suffix = args.model_name_or_path.split("-")[-1].split(
                 "/")[0]
             global_step = int(checkpoint_suffix)
@@ -402,6 +401,10 @@ def train(args, train_dataset, model: PreTrainedModel,
         desc="Epoch",
         disable=args.local_rank not in [-1, 0]
     )
+
+    #store result for each iteration on train and respective epoch eval
+    train_loss = dict()
+    train_eval_loss = {'train_loss': [], 'eval_loss': []}
 
     set_seed(args)  # Added here for reproducibility
     for i, _ in enumerate(train_iterator):
@@ -437,7 +440,8 @@ def train(args, train_dataset, model: PreTrainedModel,
                 loss.backward()
 
             tr_loss += loss.item()
-            if (step + 1) % args.gradient_accumulation_steps == 0:
+
+            if step % 2 == 0:
                 if args.fp16:
                     torch.nn.utils.clip_grad_norm_(
                         amp.master_params(optimizer), args.max_grad_norm)
@@ -454,7 +458,7 @@ def train(args, train_dataset, model: PreTrainedModel,
                     # Log metrics
                     if (
                         args.local_rank == -1 and args.evaluate_during_training
-                    ):  # Only evaluate when single GPU otherwise metrics may
+                    ):   # Only evaluate when single GPU otherwise metrics may
                         # not average well
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
@@ -492,6 +496,36 @@ def train(args, train_dataset, model: PreTrainedModel,
                     logger.info("Saving optimizer and scheduler states to %s",
                                 output_dir)
 
+                # write loss after specific batch samples
+                print('\n--------------------------')
+
+                train_loss = tr_loss / global_step
+                perplexity = torch.exp(torch.tensor(train_loss))
+
+                result = {
+                    "perplexity": perplexity, "tr_loss": train_loss,
+                    "train_steps": global_step
+                }
+
+                output_train_file = os.path.join(FINETUNE_DIR,
+                                                 "train_results.txt")
+                with open(output_train_file, "a") as writer:
+                    logger.info(
+                        "***** Train results {} *****".format(prefix))
+                    writer.write(f"\n{i + 1}")
+                    for key in sorted(result.keys()):
+                        logger.info("  %s = %s", key, str(result[key]))
+                        writer.write("%s = %s\n" % (key, str(result[key])))
+
+                # evaluate after each epoch
+                print('\nEvaluate')
+                results = evaluate(args, model, tokenizer)
+
+                train_eval_loss['train_loss'].append(train_loss)
+                train_eval_loss['eval_loss'].append(results['eval_loss'])
+
+                print('----------------------------')
+
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
@@ -499,34 +533,10 @@ def train(args, train_dataset, model: PreTrainedModel,
             train_iterator.close()
             break
 
-        # write for each epochs
-        if args.local_rank in [-1, 0]:
-            tb_writer.close()
+    if args.local_rank in [-1, 0]:
+        tb_writer.close()
 
-        tr_loss = tr_loss / global_step
-        print('\n--------------------------')
-
-        perplexity = torch.exp(torch.tensor(tr_loss))
-
-        result = {"perplexity": perplexity, "tr_loss": tr_loss,
-        "train_steps": global_step}
-
-        output_train_file = os.path.join(FINETUNE_DIR, "train_results.txt")
-        with open(output_train_file, "a") as writer:
-            logger.info("***** Train results {} *****".format(prefix))
-            writer.write(f"\n{i + 1}")
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
-
-        epoch_loss = dict()
-        for key, val in result.items():
-            epoch_loss[key] = val
-        train_loss[i + 1] = epoch_loss
-
-        print('----------------------------')
-
-    return global_step, tr_loss / global_step, train_loss
+    return global_step, tr_loss / global_step, train_eval_loss
 
 
 def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer,
@@ -545,12 +555,10 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer,
     # adjusting eval batch size according to the number of train epochs to
     # make it easier to plot with same length for train and eval also for
     # the eval loss plot to be adjusted and clear within the plot frame
-    args.eval_batch_size = int(len(eval_dataset) / args.num_train_epochs)
+    # args.eval_batch_size = int(len(eval_dataset) / args.num_train_epochs)
 
     # commenting the actual one
-    # args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-    print('\n\n', args.eval_batch_size, len(eval_dataset),
-          args.num_train_epochs)
+    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     # Note that DistributedSampler samples randomly
 
     def collate(examples: List[torch.Tensor]):
@@ -593,30 +601,25 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer,
             eval_loss += lm_loss.mean().item()
         nb_eval_steps += 1
 
-        # write for each batch
-        eval_loss = eval_loss / nb_eval_steps
-        perplexity = torch.exp(torch.tensor(eval_loss))
+    # write for each batch
+    eval_loss = eval_loss / nb_eval_steps
+    perplexity = torch.exp(torch.tensor(eval_loss))
 
-        print('\n--------------------------')
+    print('\n--------------------------')
 
-        result = {"perplexity": perplexity, "eval_loss": eval_loss,
-                  "eval_steps": nb_eval_steps}
+    result = {"perplexity": perplexity, "eval_loss": eval_loss,
+              "eval_steps": nb_eval_steps}
 
-        output_eval_file = os.path.join(FINETUNE_DIR, "eval_results.txt")
-        with open(output_eval_file, "a") as writer:
-            logger.info("***** Eval results {} *****".format(prefix))
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+    output_eval_file = os.path.join(FINETUNE_DIR, "eval_results.txt")
+    with open(output_eval_file, "a") as writer:
+        logger.info("***** Eval results {} *****".format(prefix))
+        for key in sorted(result.keys()):
+            logger.info("  %s = %s", key, str(result[key]))
+            writer.write("%s = %s\n" % (key, str(result[key])))
 
-        epoch_loss = dict()
-        for key, val in result.items():
-            epoch_loss[key] = val
-        evaluation_loss[nb_eval_steps] = epoch_loss
+    print('----------------------------')
 
-        print('----------------------------')
-
-    return result, evaluation_loss
+    return result
 
 
 def main():
@@ -950,7 +953,7 @@ def main():
         if args.local_rank == 0:
             torch.distributed.barrier()
 
-        global_step, tr_loss, train_loss = train(args,
+        global_step, tr_loss, iteration_result = train(args,
                                                  train_dataset,
                                                  model,
                                                  tokenizer)
@@ -1005,40 +1008,40 @@ def main():
 
             model = AutoModelWithLMHead.from_pretrained(checkpoint)
             model.to(args.device)
-            result, eval_loss = evaluate(args, model, tokenizer, prefix=prefix)
+            result = evaluate(args, model, tokenizer, prefix=prefix)
             result = dict((k + "_{}".format(global_step), v)
                           for k, v in result.items())
             results.update(result)
 
-    return results, train_loss, eval_loss
+    return results, args.output_dir, iteration_result
 
 
-def plot(tr_loss, eval_loss):
-    tr_epochs = list(tr_loss.keys())
-    tr_loss = [v['tr_loss'] for k, v in tr_loss.items()]
-
-    eval_epochs = list(eval_loss.keys())
-    eval_loss = [v['eval_loss'] for k, v in eval_loss.items()]
+def plot(iteration_result, output_dir):
+    epochs = list(range(1, len(iteration_result['train_loss']) + 1))
+    tr_loss = iteration_result['train_loss']
+    eval_loss = iteration_result['eval_loss']
 
     p = figure(width=750, height=550, x_axis_type="linear")
-    p.line(tr_epochs,
+    p.line(epochs,
            tr_loss,
            line_width=2,
            line_color="black",
            legend_label="Train Loss")
-    p.circle(tr_epochs, tr_loss, fill_color='white', size=8)
-    p.line(eval_epochs,
+    p.circle(epochs, tr_loss, fill_color='white', size=8)
+    p.line(epochs,
            eval_loss,
            line_width=2,
            line_color="red",
            legend_label="Eval Loss")
-    p.circle(eval_epochs, eval_loss, fill_color='white', size=8)
+    p.circle(epochs, eval_loss, fill_color='white', size=8)
 
-    output_file(f'{FINETUNE_DIR}/loss-plot.html')
+    p.legend.location = "top_left"
+
+    output_file(f'{output_dir}/loss-plot.html')
     show(p)
 
 
 if __name__ == "__main__":
-    res, train_loss, eval_loss = main()
+    res, output_dir, iteration_result = main()
 
-    plot(train_loss, eval_loss)
+    plot(iteration_result, output_dir)
