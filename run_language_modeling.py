@@ -441,7 +441,7 @@ def train(args, train_dataset, model: PreTrainedModel,
 
             tr_loss += loss.item()
 
-            if step % 2 == 0:
+            if step % 100 == 0:
                 if args.fp16:
                     torch.nn.utils.clip_grad_norm_(
                         amp.master_params(optimizer), args.max_grad_norm)
