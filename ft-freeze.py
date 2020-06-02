@@ -498,7 +498,7 @@ def train(args, train_dataset, model: PreTrainedModel,
 
             # write loss after specific batch samples
             # evaluate after certain batch step
-            if step % 2 == 0:
+            if step % args.save_steps == 0:
                 print('\n--------------------------')
 
                 train_loss = tr_loss / global_step
