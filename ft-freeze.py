@@ -934,21 +934,14 @@ def main():
         logger.info("Training new model from scratch")
         model = AutoModelWithLMHead.from_config(config)
 
-    # breakpoint()
-
-    params = model.named_parameters()
-    for i, param in enumerate(params):
-        if param[0].startswith('bert.encoder.layer') and '11' not in param[0]:
-            param[1].requires_grad = False
-        print(i, param[0], param[1].requires_grad)
-
-    # params = model.bert.encoder.layer
-    # for i, param in enumerate(params):
-    #     if i == 11:
-    #         param.train()
-    #     print(i, param.training)
-    #     # param.requires_grad = False
-    # exit()
+    # freeze bert's first 11 layers
+    layers = model.encoder.layer
+    for i, layer in enumerate(layers):
+        for param in layer.named_parameters():
+            if i + 1 != 12:
+                param[1].requires_grad = False
+            logger.info(f"Layer {i}: Train status: {param[1].requires_grad}")
+    # freeze end
 
     model.to(args.device)
 
