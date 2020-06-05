@@ -934,14 +934,21 @@ def main():
         logger.info("Training new model from scratch")
         model = AutoModelWithLMHead.from_config(config)
 
-    # freeze bert's first 11 layers
-    layers = model.encoder.layer
-    for i, layer in enumerate(layers):
-        for param in layer.named_parameters():
-#             if i + 1 != 12:
+    ######### freeze bert's first 11 layers
+    ##### This section only works if using AutoModel()
+    # layers = model.encoder.layer
+    # for i, layer in enumerate(layers):
+    #     for param in layer.named_parameters():
+    #         if i + 1 != 12:
+    #             param[1].requires_grad = False
+    #         logger.info(f"Layer {i}: Train status: {param[1].requires_grad}")
+
+    # freeze all layers, but keep the embedding and pooling layer
+    #### This section works only with AutoModelWithLMHead
+    for param in model.named_parameters():
+        if 'bert.encoder.layer' in param[0]:
             param[1].requires_grad = False
-            logger.info(f"Layer {i}: Train status: {param[1].requires_grad}")
-    # freeze end
+    ######### freeze end
 
     model.to(args.device)
 
