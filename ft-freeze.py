@@ -938,8 +938,8 @@ def main():
     layers = model.encoder.layer
     for i, layer in enumerate(layers):
         for param in layer.named_parameters():
-#             if i + 1 != 12:
-            param[1].requires_grad = False
+            if i + 1 != 12:
+                param[1].requires_grad = False
             logger.info(f"Layer {i}: Train status: {param[1].requires_grad}")
     # freeze end
 
