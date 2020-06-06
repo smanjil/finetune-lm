@@ -947,7 +947,9 @@ def main():
     #### This section works only with AutoModelWithLMHead
     for param in model.named_parameters():
         if 'bert.encoder.layer' in param[0]:
-            param[1].requires_grad = False
+            if '8' not in param[0] or '9' not in param[0], '10' not in param[0], '11' not in param[0]:
+                param[1].requires_grad = False
+        print(param[0], param[1].requires_grad)
     ######### freeze end
 
     model.to(args.device)
